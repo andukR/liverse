@@ -26,6 +26,14 @@ python3 tools/vosk_grammar_probe.py --text "неемия первая глава
 python3 tools/vosk_grammar_probe.py
 ```
 
+Чтобы вместе с JSONL-логом сохранить аудио последнего запуска:
+
+```bash
+python3 tools/vosk_grammar_probe.py --log-audio
+```
+
+Аудио пишется в `audio.wav` рядом с `events.jsonl`.
+
 Если нужен вывод в Holyrics, задайте переменные окружения:
 
 - `HOLYRICS_URL`

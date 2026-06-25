@@ -8,6 +8,7 @@ import json
 import queue
 import re
 import sys
+import wave
 from collections import deque
 from dataclasses import asdict
 from datetime import datetime
@@ -64,6 +65,10 @@ REFERENCE_WORDS = {
     "стиха",
     "стихи",
     "стихов",
+    "там",
+    "же",
+    "конец",
+    "конца",
     "читаем",
 }
 VOSK_SMALL_RU_MISSING_WORDS = {
@@ -248,6 +253,37 @@ def parsed_payload(text: str, bible_path: Path = DEFAULT_BIBLE, *, show_candidat
     return payload
 
 
+def likely_explicit_reference(text: str) -> bool:
+    lowered = text.lower().replace("ё", "е")
+    if not re.search(r"\b(глава|стих|псалом)\b", lowered):
+        return False
+    for canonical, aliases in book_synonyms.items():
+        names = [canonical, *aliases]
+        for name in names:
+            normalized_name = name.lower().replace("ё", "е")
+            if normalized_name and re.search(rf"\b{re.escape(normalized_name)}\b", lowered):
+                return True
+    return False
+
+
+def same_place_candidates(candidates: list[str], last_parsed: dict | None) -> list[str]:
+    if not last_parsed:
+        return candidates
+    book = last_parsed.get("book")
+    chapter = last_parsed.get("chapter")
+    if not book or not chapter:
+        return candidates
+
+    expanded: list[str] = []
+    for candidate in candidates:
+        if not re.search(r"\bтам\s+же\b", candidate.lower().replace("ё", "е")):
+            continue
+        suffix = re.sub(r"\bтам\s+же\b", "", candidate, flags=re.IGNORECASE).strip()
+        if suffix:
+            expanded.append(f"{book} {chapter} глава {suffix}")
+    return expanded + candidates
+
+
 def parsed_payload_from_candidates(
     candidates: list[str],
     bible_path: Path = DEFAULT_BIBLE,
@@ -269,6 +305,11 @@ def parsed_payload_from_candidates(
     ]
     for index, payload in enumerate(attempts):
         if payload.get("slide"):
+            if index > 0 and attempts and likely_explicit_reference(str(attempts[0].get("text") or "")):
+                first_payload = attempts[0]
+                first_payload["attempts"] = attempt_summaries[1:]
+                first_payload["blocked_stale_context"] = True
+                return first_payload
             payload["attempts"] = [
                 summary
                 for summary_index, summary in enumerate(attempt_summaries)
@@ -326,6 +367,7 @@ def run_microphone(args: argparse.Namespace) -> int:
             "device": args.device,
             "open_vocabulary": args.open_vocabulary,
             "vosk_buffer_parts": args.vosk_buffer_parts,
+            "log_audio": args.log_audio,
             "slide_output": args.slide_output,
             "holyrics_target": describe_holyrics_target(args),
             "grammar": None if grammar is None else grammar_diagnostics(grammar),
@@ -348,6 +390,14 @@ def run_microphone(args: argparse.Namespace) -> int:
     recognizer = KaldiRecognizer(*recognizer_args)
     recognizer.SetWords(True)
     text_buffer = VoskTextBuffer(args.vosk_buffer_parts)
+    last_parsed: dict | None = None
+    audio_log = None
+    if args.log_audio and logger.run_dir:
+        audio_log = wave.open(str(logger.run_dir / "audio.wav"), "wb")
+        audio_log.setnchannels(1)
+        audio_log.setsampwidth(2)
+        audio_log.setframerate(args.samplerate)
+        logger.write("audio_log", {"path": str(logger.run_dir / "audio.wav")})
 
     stream_kwargs = {
         "samplerate": args.samplerate,
@@ -364,13 +414,15 @@ def run_microphone(args: argparse.Namespace) -> int:
         try:
             while True:
                 data = audio_queue.get()
+                if audio_log:
+                    audio_log.writeframes(data)
                 if recognizer.AcceptWaveform(data):
                     result = json.loads(recognizer.Result())
                     text = result.get("text", "").strip()
                     logger.write("final_raw", {"result": result, "text": text})
                     if text:
                         text_buffer.add(text)
-                        candidate_texts = text_buffer.candidates()
+                        candidate_texts = same_place_candidates(text_buffer.candidates(), last_parsed)
                         payload = parsed_payload_from_candidates(
                             candidate_texts,
                             bible_path=args.bible,
@@ -380,6 +432,8 @@ def run_microphone(args: argparse.Namespace) -> int:
                         payload["vosk_text"] = text
                         payload["vosk_buffer"] = list(text_buffer.parts)
                         payload["holyrics"] = publish_holyrics_if_needed(args, payload)
+                        if payload.get("parsed"):
+                            last_parsed = payload["parsed"]
                         logger.write(
                             "parsed",
                             {
@@ -401,6 +455,9 @@ def run_microphone(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             print("\nОстановлено.")
             return 0
+        finally:
+            if audio_log:
+                audio_log.close()
 
 
 def main() -> int:
@@ -423,6 +480,7 @@ def main() -> int:
     parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
     parser.add_argument("--no-log", action="store_true", help="Disable JSONL logging.")
     parser.add_argument("--log-partials", action="store_true", help="Log Vosk partial results too.")
+    parser.add_argument("--log-audio", action="store_true", help="Save microphone audio to audio.wav in the run log.")
     parser.add_argument(
         "--slide-output",
         choices=["holyrics", "none"],

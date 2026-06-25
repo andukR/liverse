@@ -890,7 +890,7 @@ def ref_candidates(normalized: str, book: str, bible: dict[str, dict[int, dict[i
         (r"(\d+)\s+глава\s+(\d+)\s+и\s+(\d+)\s+стих", 1, 2, 3, 0.98),
         (r"(\d+)\s+глава\s+в\s+(\d+)\s+и\s+(\d+)\s+стих", 1, 2, 3, 0.98),
         (r"(\d+)\s+глава\s+(\d+)\s+и\s+(\d+)\s+и\s+(?:есть|там|мы|будем|написано|такие)\b", 1, 2, 3, 0.985),
-        (r"(\d+)\s+глава\s+(\d+)\s+(\d+)\s+стих", 1, 2, 3, 0.94),
+        (r"(\d+)\s+глава\s+(\d+)\s+(\d+)\s+стих", 1, 2, 3, 0.98),
     )
     for pattern, chapter_group, start_group, end_group, score in range_patterns:
         for match in re.finditer(pattern, normalized):
@@ -935,7 +935,7 @@ def ref_candidates(normalized: str, book: str, bible: dict[str, dict[int, dict[i
         chapter_end = max(chapter_map) if chapter_map else None
         tokens = [token for token, _start, _end in token_spans(normalized)]
         for match in re.finditer(
-            r"(?:с\s+)?(\d+)\s+стих\s+и\s+до\s+конца\s+глава",
+            r"(?:с\s+)?(\d+)\s+стих(?:\s+\w+){0,4}?\s+(?:и\s+)?до\s+конца\s+глава",
             normalized,
         ):
             start_verse = int(match.group(1))

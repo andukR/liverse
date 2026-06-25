@@ -15,6 +15,8 @@ DEFAULT_LOG_DIR = Path(".cache/live_verse_vosk/vosk_probe")
 def event_paths(log_dir: Path) -> list[Path]:
     if log_dir.is_file():
         return [log_dir]
+    if (log_dir / "events.jsonl").is_file():
+        return [log_dir / "events.jsonl"]
     return sorted(log_dir.glob("*/events.jsonl"))
 
 

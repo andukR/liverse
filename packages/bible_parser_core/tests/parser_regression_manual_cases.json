@@ -579,5 +579,26 @@
     "source": "manual",
     "line": 0,
     "tags": ["range", "chapter_tail", "psalm", "manual", "recent_fix"]
+  },
+  {
+    "text": "Книга Иов, тридцать четвёртая глава, тридцать третьей, тридцать четвёртая стих.",
+    "ref": "Иов 34:33-34",
+    "source": "manual",
+    "line": 0,
+    "tags": ["range", "asr_variant", "job", "manual", "recent_fix"]
+  },
+  {
+    "text": "Книга Иов, тридцать вторая глава, тридцать третьей, тридцать четвёртая стих.",
+    "ref": "",
+    "source": "manual",
+    "line": 0,
+    "tags": ["invalid_reference", "range", "asr_variant", "job", "manual", "recent_fix"]
+  },
+  {
+    "text": "Первое послание Иоанна. Вторая глава, с 18 стиха до конца главы.",
+    "ref": "1 Иоанна 2:18-29",
+    "source": "manual",
+    "line": 0,
+    "tags": ["range", "chapter_tail", "manual", "recent_fix"]
   }
 ]
