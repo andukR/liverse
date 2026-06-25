@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 
 BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parents[1]
+PROJECT_ROOT = BASE_DIR.parent
 DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8091
@@ -28,7 +28,21 @@ def parse_env_value(value: str) -> str:
     return value
 
 
-def load_env_file(path: Path = DEFAULT_ENV_PATH) -> dict[str, str]:
+def env_file_paths() -> list[Path]:
+    explicit_path = os.environ.get("LIVE_VERSE_VOSK_ENV")
+    paths = [
+        Path(explicit_path).expanduser() if explicit_path else None,
+        Path.cwd() / ".env",
+        DEFAULT_ENV_PATH,
+    ]
+    result: list[Path] = []
+    for path in paths:
+        if path is not None and path not in result:
+            result.append(path)
+    return result
+
+
+def load_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.exists():
         return values
@@ -47,14 +61,28 @@ def load_env_file(path: Path = DEFAULT_ENV_PATH) -> dict[str, str]:
 
 
 def env_setting(name: str, default: str = "") -> str:
-    file_env = load_env_file()
+    file_env: dict[str, str] = {}
+    for path in env_file_paths():
+        file_env.update(load_env_file(path))
     return os.environ.get(name) or file_env.get(name) or default
+
+
+def normalize_holyrics_url(value: str) -> str:
+    value = value.strip().rstrip("/")
+    if not value or value.lower() == "auto":
+        return value or "auto"
+    if "://" not in value:
+        host, separator, port = value.partition(":")
+        if separator:
+            return f"http://{host}:{port}"
+        return f"http://{host}:{DEFAULT_PORT}"
+    return value
 
 
 def default_holyrics_url() -> str:
     explicit_url = env_setting("HOLYRICS_URL")
     if explicit_url:
-        return explicit_url
+        return normalize_holyrics_url(explicit_url)
 
     host = env_setting("HOLYRICS_HOST")
     port = env_setting("HOLYRICS_API_PORT")
@@ -74,7 +102,7 @@ def describe_holyrics_target(args: Any) -> str:
 
 
 def holyrics_candidate_urls(holyrics_url: str) -> list[str]:
-    value = str(holyrics_url or "").strip()
+    value = normalize_holyrics_url(str(holyrics_url or ""))
     if value and value.lower() != "auto":
         return [value.rstrip("/")]
     return [f"http://127.0.0.1:{DEFAULT_PORT}", f"http://127.0.0.1:4888"]
