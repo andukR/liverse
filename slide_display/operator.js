@@ -11,6 +11,7 @@ const manualRef = document.querySelector("#manualRef");
 const manualStatus = document.querySelector("#manualStatus");
 const bookNames = document.querySelector("#bookNames");
 const bookSuggestions = document.querySelector("#bookSuggestions");
+const bookTopicTabs = document.querySelector("#bookTopicTabs");
 const bookGrid = document.querySelector("#bookGrid");
 const chapterGrid = document.querySelector("#chapterGrid");
 const verseGrid = document.querySelector("#verseGrid");
@@ -26,12 +27,91 @@ const manualCard = document.querySelector("#manualCard");
 let books = [];
 let bibleStructure = {};
 let applyPickTimer = null;
+let activeBookTopic = "old";
+let multiTapState = { key: "", count: 0, timer: null };
 const rangePick = {
   book: "",
   chapter: null,
   startVerse: null,
   endVerse: null,
 };
+
+const bookTopics = [
+  {
+    key: "old",
+    label: "Ветхий Завет",
+    books: [
+      ["Быт", ["Бытие"]],
+      ["Исх", ["Исход"]],
+      ["Лев", ["Левит"]],
+      ["Чис", ["Числа"]],
+      ["Втор", ["Второзаконие"]],
+      ["Ис.Нав", ["Иисус Навин"]],
+      ["Суд", ["Судьи"]],
+      ["Руф", ["Руфь"]],
+      ["Цар", ["1 Царств", "2 Царств", "3 Царств", "4 Царств"]],
+      ["Пар", ["1 Паралипоменон", "2 Паралипоменон"]],
+      ["Ездр", ["Ездра"]],
+      ["Неем", ["Неемия"]],
+      ["Есф", ["Есфирь"]],
+      ["Иов", ["Иов"]],
+      ["Пс", ["Псалтирь"]],
+      ["Притч", ["Притчи"]],
+      ["Еккл", ["Екклесиаст"]],
+      ["Песн", ["Песня Песней"]],
+    ],
+  },
+  {
+    key: "prophets",
+    label: "Пророки",
+    books: [
+      ["Ис", ["Исаия"]],
+      ["Иер", ["Иеремия"]],
+      ["Плач", ["Плач Иеремии"]],
+      ["Иез", ["Иезекииль"]],
+      ["Дан", ["Даниил"]],
+      ["Ос", ["Осия"]],
+      ["Иоил", ["Иоиль"]],
+      ["Ам", ["Амос"]],
+      ["Авд", ["Авдий"]],
+      ["Ион", ["Иона"]],
+      ["Мих", ["Михей"]],
+      ["Наум", ["Наум"]],
+      ["Авв", ["Аввакум"]],
+      ["Соф", ["Софония"]],
+      ["Агг", ["Аггей"]],
+      ["Зах", ["Захария"]],
+      ["Мал", ["Малахия"]],
+      ["Откр", ["Откровение"], "aside"],
+    ],
+  },
+  {
+    key: "new",
+    label: "Новый Завет",
+    books: [
+      ["Матф", ["Матфей"]],
+      ["Марк", ["Марк"]],
+      ["Лук", ["Лука"]],
+      ["Иоан", ["Иоанн"]],
+      ["Деян", ["Деяния"]],
+      ["Иак", ["Иаков"]],
+      ["Петр", ["1 Петра", "2 Петра"]],
+      ["Иоан", ["1 Иоанна", "2 Иоанна", "3 Иоанна"]],
+      ["Иуд", ["Иуда"]],
+      ["Рим", ["Римлянам"]],
+      ["Кор", ["1 Коринфянам", "2 Коринфянам"]],
+      ["Гал", ["Галатам"]],
+      ["Еф", ["Ефесянам"]],
+      ["Фил", ["Филиппийцам"]],
+      ["Кол", ["Колоссянам"]],
+      ["Фесс", ["1 Фессалоникийцам", "2 Фессалоникийцам"]],
+      ["Тим", ["1 Тимофею", "2 Тимофею"]],
+      ["Тит", ["Титу"]],
+      ["Флм", ["Филимону"]],
+      ["Евр", ["Евреям"]],
+    ],
+  },
+];
 
 const stageNames = {
   listening: "Слушаю",
@@ -167,19 +247,73 @@ function button(label, className, onClick) {
   return item;
 }
 
+function selectBook(book) {
+  rangePick.book = book;
+  rangePick.chapter = null;
+  rangePick.startVerse = null;
+  rangePick.endVerse = null;
+  renderBooksGrid();
+  renderChaptersGrid();
+  updatePickedReference();
+  setStep("chapter");
+}
+
+function renderBookTopicTabs() {
+  bookTopicTabs.replaceChildren();
+  bookTopics.forEach((topic) => {
+    const item = button(topic.label, "book-topic-button", () => {
+      activeBookTopic = topic.key;
+      window.clearTimeout(multiTapState.timer);
+      multiTapState = { key: "", count: 0, timer: null };
+      renderBookTopicTabs();
+      renderBooksGrid();
+      setStep("book");
+    });
+    item.classList.toggle("active", activeBookTopic === topic.key);
+    bookTopicTabs.append(item);
+  });
+}
+
+function visibleBookItems() {
+  const topic = bookTopics.find((item) => item.key === activeBookTopic) || bookTopics[0];
+  return topic.books.filter(([_label, variants]) => variants.some((book) => bibleStructure[book]));
+}
+
+function bookButtonTitle(label, variants) {
+  if (variants.length <= 1) return variants[0];
+  return `${label}: ${variants.map((book, index) => `${index + 1} - ${book}`).join(", ")}`;
+}
+
+function scheduleMultiTapBook(key, label, variants) {
+  window.clearTimeout(multiTapState.timer);
+  if (multiTapState.key === key) {
+    multiTapState.count += 1;
+  } else {
+    multiTapState = { key, count: 1, timer: null };
+  }
+  const count = Math.min(multiTapState.count, variants.length);
+  pickedReference.textContent = `${label}: ${count} - ${variants[count - 1]}`;
+  multiTapState.timer = window.setTimeout(() => {
+    selectBook(variants[count - 1]);
+    multiTapState = { key: "", count: 0, timer: null };
+  }, 360);
+}
+
 function renderBooksGrid() {
   bookGrid.replaceChildren();
-  books.forEach((book) => {
-    const item = button(book, "picker-button book-button", () => {
-      rangePick.book = book;
-      rangePick.chapter = null;
-      rangePick.startVerse = null;
-      rangePick.endVerse = null;
-      renderChaptersGrid();
-      updatePickedReference();
-      setStep("chapter");
+  visibleBookItems().forEach(([label, variants, marker], index) => {
+    const key = `${activeBookTopic}:${label}:${index}`;
+    const item = button(label, "picker-button book-button short-book-button", () => {
+      if (variants.length > 1) {
+        scheduleMultiTapBook(key, label, variants);
+        return;
+      }
+      selectBook(variants[0]);
     });
-    item.classList.toggle("selected", rangePick.book === book);
+    item.title = bookButtonTitle(label, variants);
+    item.dataset.fullName = variants.length > 1 ? `${variants.length} кн.` : variants[0];
+    if (marker === "aside") item.classList.add("aside-book");
+    if (variants.includes(rangePick.book)) item.classList.add("selected");
     bookGrid.append(item);
   });
 }
@@ -267,6 +401,7 @@ async function loadBooks() {
       option.value = book;
       bookNames.append(option);
     });
+    renderBookTopicTabs();
     renderBooksGrid();
     setStep("book");
   } catch {
