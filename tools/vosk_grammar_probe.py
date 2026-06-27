@@ -261,6 +261,62 @@ def parsed_payload(text: str, bible_path: Path = DEFAULT_BIBLE, *, show_candidat
     return payload
 
 
+def low_confidence_jeremiah(asr_result: dict | None, *, threshold: float = 0.76) -> bool:
+    if not asr_result:
+        return False
+    for item in asr_result.get("result") or []:
+        word = str(item.get("word") or "").lower()
+        if not re.fullmatch(r"иереми[яи]", word):
+            continue
+        try:
+            confidence = float(item.get("conf"))
+        except (TypeError, ValueError):
+            continue
+        if confidence <= threshold:
+            return True
+    return False
+
+
+def nehemiah_confusable_text(
+    text: str,
+    bible_path: Path = DEFAULT_BIBLE,
+    *,
+    asr_result: dict | None = None,
+) -> str | None:
+    if not re.search(r"\bиереми[яи]\b", text, flags=re.IGNORECASE):
+        return None
+
+    replacement = re.sub(r"\bиеремии\b", "неемии", text, flags=re.IGNORECASE)
+    replacement = re.sub(r"\bиеремия\b", "неемия", replacement, flags=re.IGNORECASE)
+    if replacement == text:
+        return None
+
+    nehemiah = parse_live_reference(replacement, bible_path=bible_path)
+    if not nehemiah or nehemiah.book != "Неемия":
+        return None
+
+    original = parse_live_reference(text, bible_path=bible_path)
+    if original is None or low_confidence_jeremiah(asr_result):
+        return replacement
+    return None
+
+
+def expand_nehemiah_confusable_candidates(
+    candidates: list[str],
+    bible_path: Path = DEFAULT_BIBLE,
+    *,
+    asr_result: dict | None = None,
+) -> list[str]:
+    expanded: list[str] = []
+    for candidate in candidates:
+        replacement = nehemiah_confusable_text(candidate, bible_path=bible_path, asr_result=asr_result)
+        if replacement and replacement not in expanded:
+            expanded.append(replacement)
+        if candidate not in expanded:
+            expanded.append(candidate)
+    return expanded
+
+
 def likely_explicit_reference(text: str) -> bool:
     lowered = text.lower().replace("ё", "е")
     if not re.search(r"\b(глава|стих|псалом)\b", lowered):
@@ -525,6 +581,11 @@ def run_microphone(args: argparse.Namespace) -> int:
                     if text:
                         text_buffer.add(text)
                         candidate_texts = same_place_candidates(text_buffer.candidates(), last_parsed)
+                        candidate_texts = expand_nehemiah_confusable_candidates(
+                            candidate_texts,
+                            bible_path=args.bible,
+                            asr_result=result,
+                        )
                         payload = parsed_payload_from_candidates(
                             candidate_texts,
                             bible_path=args.bible,
@@ -651,8 +712,12 @@ def main() -> int:
             }
         )
         start_slide_server_if_needed(args)
-        payload = parsed_payload_from_candidates(
+        candidate_texts = expand_nehemiah_confusable_candidates(
             [" ".join(args.text)],
+            bible_path=args.bible,
+        )
+        payload = parsed_payload_from_candidates(
+            candidate_texts,
             bible_path=args.bible,
             show_candidates=args.show_candidates,
         )
@@ -660,7 +725,7 @@ def main() -> int:
         logger.write(
             "text_probe",
             {
-                "candidate_texts": [" ".join(args.text)],
+                "candidate_texts": candidate_texts,
                 "payload": payload_summary(payload),
                 "output": payload["output"],
             },
