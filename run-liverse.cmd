@@ -6,4 +6,4 @@ if not exist .venv (
   exit /b 1
 )
 call .venv\Scripts\activate.bat
-python tools\vosk_grammar_probe.py
+python tools\vosk_grammar_probe.py %*

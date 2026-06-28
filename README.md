@@ -50,6 +50,16 @@ python3 tools/vosk_grammar_probe.py --require-approval --slide-output both --ope
 python3 tools/vosk_grammar_probe.py --require-approval
 ```
 
+Если оператор работает на том же компьютере, где запущен Holyrics, можно
+использовать локальное всплывающее окно вместо web-пульта:
+
+```bash
+python3 tools/vosk_grammar_probe.py --require-approval --approval-ui popup
+```
+
+Окно показывает найденную ссылку крупным шрифтом. `Enter` отправляет цитату в
+Holyrics, `Esc` или `Space` отклоняют её.
+
 Отдельно запустить только web-экран:
 
 ```bash
@@ -81,6 +91,12 @@ python3 tools/vosk_grammar_probe.py --log-audio
 2. Распакуйте проект.
 3. Запустите `install-windows.ps1`.
 4. Запускайте `run-liverse.cmd`.
+
+Для режима со всплывающим окном из PowerShell или Command Prompt:
+
+```powershell
+.\run-liverse.cmd --require-approval --approval-ui popup
+```
 
 ## Установка на Linux
 

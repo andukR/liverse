@@ -452,6 +452,116 @@ def publish_web_if_needed(args: argparse.Namespace, payload: dict) -> dict:
     return {"enabled": True, "ok": True, "slide": slide}
 
 
+def popup_approval_decision(slide: dict) -> str:
+    try:
+        import tkinter as tk
+        from tkinter import font as tkfont
+    except Exception as exc:
+        raise RuntimeError(f"popup_unavailable:{exc}") from exc
+
+    decision = {"action": "reject"}
+    root = tk.Tk()
+    root.title("LiVerse")
+    root.attributes("-topmost", True)
+    root.configure(bg="#101820")
+    root.resizable(True, True)
+
+    width, height = 980, 360
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    x = max(0, (screen_width - width) // 2)
+    y = max(0, (screen_height - height) // 2)
+    root.geometry(f"{width}x{height}+{x}+{y}")
+
+    ref_font = tkfont.Font(family="Segoe UI", size=54, weight="bold")
+    hint_font = tkfont.Font(family="Segoe UI", size=24, weight="bold")
+    button_font = tkfont.Font(family="Segoe UI", size=22, weight="bold")
+
+    tk.Label(
+        root,
+        text=str(slide.get("ref") or "Найдена цитата"),
+        bg="#101820",
+        fg="#ffd166",
+        font=ref_font,
+        wraplength=900,
+        justify="center",
+    ).pack(fill="x", padx=36, pady=(34, 12))
+
+    tk.Label(
+        root,
+        text="Enter - принять     Esc или Space - отклонить",
+        bg="#101820",
+        fg="#c8d2dc",
+        font=hint_font,
+    ).pack(fill="x", padx=36, pady=(8, 18))
+
+    buttons = tk.Frame(root, bg="#101820")
+    buttons.pack(fill="x", padx=36, pady=(0, 30))
+
+    def close(action: str) -> None:
+        decision["action"] = action
+        root.destroy()
+
+    approve = tk.Button(
+        buttons,
+        text="Принять",
+        command=lambda: close("approve"),
+        bg="#148447",
+        fg="white",
+        activebackground="#1aa158",
+        activeforeground="white",
+        font=button_font,
+        relief="flat",
+        padx=24,
+        pady=16,
+    )
+    reject = tk.Button(
+        buttons,
+        text="Отклонить",
+        command=lambda: close("reject"),
+        bg="#9b3030",
+        fg="white",
+        activebackground="#b73a3a",
+        activeforeground="white",
+        font=button_font,
+        relief="flat",
+        padx=24,
+        pady=16,
+    )
+    approve.pack(side="left", fill="x", expand=True, padx=(0, 10))
+    reject.pack(side="left", fill="x", expand=True, padx=(10, 0))
+
+    root.bind("<Return>", lambda _event: close("approve"))
+    root.bind("<Escape>", lambda _event: close("reject"))
+    root.bind("<space>", lambda _event: close("reject"))
+    root.protocol("WM_DELETE_WINDOW", lambda: close("reject"))
+    root.after(100, root.focus_force)
+    root.after(150, root.lift)
+    root.mainloop()
+    return decision["action"]
+
+
+def publish_after_approval(args: argparse.Namespace, payload: dict) -> dict:
+    return {
+        "holyrics": publish_holyrics_if_needed(args, payload),
+        "web": publish_web_if_needed(args, payload),
+    }
+
+
+def approve_with_popup(args: argparse.Namespace, payload: dict) -> dict:
+    slide = payload.get("slide")
+    if not slide:
+        return {"enabled": False}
+    try:
+        action = popup_approval_decision(slide)
+    except Exception as exc:
+        return {"enabled": True, "ok": False, "reason": str(exc)}
+    if action != "approve":
+        return {"enabled": True, "ok": True, "action": "reject"}
+    output = publish_after_approval(args, payload)
+    return {"enabled": True, "ok": True, "action": "approve", **output}
+
+
 def submit_for_approval(args: argparse.Namespace, payload: dict) -> dict:
     if not payload.get("slide"):
         return {"enabled": False}
@@ -462,7 +572,8 @@ def submit_for_approval(args: argparse.Namespace, payload: dict) -> dict:
 
 
 def start_slide_server_if_needed(args: argparse.Namespace):
-    needs_server = args.start_slide_server or args.require_approval or args.slide_output in {"web", "both"}
+    web_approval = args.require_approval and args.approval_ui == "web"
+    needs_server = args.start_slide_server or web_approval or args.slide_output in {"web", "both"}
     if not needs_server:
         return None
 
@@ -483,14 +594,21 @@ def start_slide_server_if_needed(args: argparse.Namespace):
     return start_server_thread(
         args.slide_host,
         args.slide_port,
-        decision_callback=decision_callback if args.require_approval else None,
-        open_qr=args.open_operator_qr,
+        decision_callback=decision_callback if web_approval else None,
+        open_qr=args.open_operator_qr and web_approval,
         open_browser=args.open_operator_browser,
     )
 
 
 def publish_payload(args: argparse.Namespace, payload: dict) -> dict:
     if args.require_approval:
+        if args.approval_ui == "popup":
+            popup_result = approve_with_popup(args, payload)
+            return {
+                "approval": popup_result,
+                "holyrics": popup_result.get("holyrics", {"enabled": False, "reason": "rejected_or_no_slide"}),
+                "web": popup_result.get("web", {"enabled": False, "reason": "rejected_or_no_slide"}),
+            }
         return {
             "approval": submit_for_approval(args, payload),
             "holyrics": {"enabled": False, "reason": "waiting_for_approval"},
@@ -523,8 +641,11 @@ def run_microphone(args: argparse.Namespace) -> int:
             "log_audio": args.log_audio,
             "slide_output": args.slide_output,
             "require_approval": args.require_approval,
+            "approval_ui": args.approval_ui,
             "slide_server": f"http://{args.slide_host}:{args.slide_port}" if (
-                args.start_slide_server or args.require_approval or args.slide_output in {"web", "both"}
+                args.start_slide_server
+                or (args.require_approval and args.approval_ui == "web")
+                or args.slide_output in {"web", "both"}
             ) else None,
             "holyrics_target": describe_holyrics_target(args),
             "grammar": None if grammar is None else grammar_diagnostics(grammar),
@@ -653,7 +774,13 @@ def main() -> int:
     parser.add_argument(
         "--require-approval",
         action="store_true",
-        help="Wait for operator approval in the phone/browser UI before sending to slide output.",
+        help="Wait for operator approval before sending to slide output.",
+    )
+    parser.add_argument(
+        "--approval-ui",
+        choices=["web", "popup"],
+        default="web",
+        help="Approval UI for --require-approval. Use popup for a local keyboard-driven window.",
     )
     parser.add_argument("--start-slide-server", action="store_true", help="Start local web slide/operator server.")
     parser.add_argument("--slide-host", default="0.0.0.0", help="Web slide server host.")
@@ -707,6 +834,7 @@ def main() -> int:
                 "open_vocabulary": args.open_vocabulary,
                 "slide_output": args.slide_output,
                 "require_approval": args.require_approval,
+                "approval_ui": args.approval_ui,
                 "holyrics_target": describe_holyrics_target(args),
                 "grammar": None if grammar is None else grammar_diagnostics(grammar),
             }
