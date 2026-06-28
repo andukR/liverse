@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import re
 import sys
@@ -46,6 +47,8 @@ WELCOME_TEXT = (
     "библейских ссылок, чтобы вся церковь могла сосредоточиться на слушании, "
     "чтении и размышлении над Словом Божиим."
 )
+ENTER_KEYS = {"\r", "\n"}
+SPACE_KEYS = {" "}
 REFERENCE_WORDS = {
     "апостол",
     "богослова",
@@ -345,6 +348,61 @@ def show_session_summary_popup(records: list[dict]) -> None:
     root.after(100, root.focus_force)
     root.after(150, root.lift)
     root.mainloop()
+
+
+def read_single_key() -> str:
+    if os.name == "nt":
+        import msvcrt
+
+        return msvcrt.getwch()
+
+    import termios
+    import tty
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        return sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def ask_enter_or_space(question: str, *, enter_label: str, space_label: str) -> bool:
+    print(question, flush=True)
+    print(f"Enter — {enter_label}; Space — {space_label}", flush=True)
+    while True:
+        key = read_single_key()
+        if key in ENTER_KEYS:
+            print(enter_label, flush=True)
+            return True
+        if key in SPACE_KEYS:
+            print(space_label, flush=True)
+            return False
+
+
+def configure_interactive_approval_mode(args: argparse.Namespace) -> None:
+    if not args.ask_approval_mode or args.text:
+        return
+    if not sys.stdin.isatty():
+        print("Интерактивный выбор режима недоступен: консоль не принимает ввод.", flush=True)
+        return
+
+    use_approval = ask_enter_or_space(
+        "Работать с подтверждением оператора?",
+        enter_label="да",
+        space_label="нет, полностью автоматический режим",
+    )
+    args.require_approval = use_approval
+    if not use_approval:
+        return
+
+    use_web = ask_enter_or_space(
+        "Подтверждение через веб-интерфейс или во всплывающем окне?",
+        enter_label="веб-интерфейс",
+        space_label="всплывающее окно",
+    )
+    args.approval_ui = "web" if use_web else "popup"
 
 
 def usable_grammar_phrase(phrase: str) -> bool:
@@ -952,6 +1010,11 @@ def main() -> int:
     parser.add_argument("--show-candidates", action="store_true", help="Print resolver candidate list.")
     parser.add_argument("--debug-console", action="store_true", help="Print full JSON payloads and Vosk partials.")
     parser.add_argument("--print-log-path", action="store_true", help="Print JSONL log path on startup.")
+    parser.add_argument(
+        "--ask-approval-mode",
+        action="store_true",
+        help="Ask whether to use automatic mode, web approval, or popup approval before microphone startup.",
+    )
     parser.add_argument("--text", nargs="+", help="Resolve text without opening the microphone.")
     parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR)
     parser.add_argument("--no-log", action="store_true", help="Disable JSONL logging.")
@@ -1011,6 +1074,7 @@ def main() -> int:
     parser.add_argument("--holyrics-timeout", type=float, default=float(env_setting("HOLYRICS_TIMEOUT", "1.5")))
     parser.set_defaults(session_summary_popup=True)
     args = parser.parse_args()
+    configure_interactive_approval_mode(args)
 
     if args.text:
         grammar = None if args.open_vocabulary else build_grammar()
