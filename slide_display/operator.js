@@ -24,11 +24,15 @@ const pipelineProgress = document.querySelector("#pipelineProgress");
 const pipelineMessage = document.querySelector("#pipelineMessage");
 const manualHint = document.querySelector("#manualHint");
 const manualCard = document.querySelector("#manualCard");
+const sessionQuoteCount = document.querySelector("#sessionQuoteCount");
+const whatsappShare = document.querySelector("#whatsappShare");
+const copySessionQuotes = document.querySelector("#copySessionQuotes");
 let books = [];
 let bibleStructure = {};
 let applyPickTimer = null;
 let activeBookTopic = "old";
 let multiTapState = { key: "", count: 0, timer: null };
+let sessionShareText = "";
 const rangePick = {
   book: "",
   chapter: null,
@@ -137,6 +141,7 @@ function renderProcessing(processing = {}) {
 
 function render(state) {
   renderProcessing((state && state.processing) || {});
+  renderSessionShare((state && state.session_share) || {});
   const candidate = state && state.candidate;
   waiting.classList.toggle("hidden", Boolean(candidate));
   candidateCard.classList.toggle("hidden", !candidate);
@@ -146,6 +151,15 @@ function render(state) {
   resizeCandidateVerse();
   asr.textContent = candidate.asr || candidate.detected_text || "";
   status.textContent = "";
+}
+
+function renderSessionShare(share = {}) {
+  const count = Number(share.count) || 0;
+  sessionShareText = share.text || "";
+  sessionQuoteCount.textContent = `Цитат: ${count}`;
+  whatsappShare.href = share.whatsapp_url || "#";
+  whatsappShare.classList.toggle("disabled", !share.whatsapp_url);
+  copySessionQuotes.disabled = !sessionShareText;
 }
 
 function resizeCandidateVerse() {
@@ -174,6 +188,15 @@ async function decide(action) {
 
 approve.addEventListener("click", () => decide("approve"));
 reject.addEventListener("click", () => decide("reject"));
+copySessionQuotes.addEventListener("click", async () => {
+  if (!sessionShareText) return;
+  try {
+    await navigator.clipboard.writeText(sessionShareText);
+    manualStatus.textContent = "Список цитат скопирован";
+  } catch {
+    manualStatus.textContent = sessionShareText;
+  }
+});
 
 function bookQuery(value) {
   return value.trimStart().replace(/\s+\d.*$/, "").toLocaleLowerCase("ru-RU");

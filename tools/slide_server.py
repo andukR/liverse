@@ -15,7 +15,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 
 __version__ = "0.1.0"
@@ -39,6 +39,7 @@ CLIENTS: list[queue.Queue] = []
 OPERATOR_CLIENTS: list[queue.Queue] = []
 STATE_LOCK = threading.Lock()
 PENDING_CANDIDATE: dict = {}
+SESSION_QUOTES: list[dict] = []
 DECISION_CALLBACK = None
 PROCESSING_STATE = {
     "stage": "listening",
@@ -71,10 +72,13 @@ def operator_state() -> dict:
     with STATE_LOCK:
         pending = dict(PENDING_CANDIDATE)
         processing = dict(PROCESSING_STATE)
+        session_quotes = [dict(item) for item in SESSION_QUOTES]
     return {
         "status": "pending" if pending else "waiting",
         "candidate": pending or None,
         "processing": processing,
+        "session_quotes": session_quotes,
+        "session_share": session_share_payload(session_quotes),
     }
 
 
@@ -82,6 +86,7 @@ def reset_operator_state(decision_callback=None) -> None:
     global DECISION_CALLBACK
     with STATE_LOCK:
         PENDING_CANDIDATE.clear()
+        SESSION_QUOTES.clear()
         PROCESSING_STATE.update(
             {
                 "stage": "listening",
@@ -92,6 +97,43 @@ def reset_operator_state(decision_callback=None) -> None:
             }
         )
     DECISION_CALLBACK = decision_callback
+
+
+def session_share_text(quotes: list[dict]) -> str:
+    refs = [str(item.get("ref") or "").strip() for item in quotes]
+    refs = [ref for ref in refs if ref]
+    if not refs:
+        return ""
+    lines = ["Цитаты из проповеди:"]
+    lines.extend(f"{index}. {ref}" for index, ref in enumerate(refs, start=1))
+    return "\n".join(lines)
+
+
+def session_share_payload(quotes: list[dict] | None = None) -> dict:
+    if quotes is None:
+        with STATE_LOCK:
+            quotes = [dict(item) for item in SESSION_QUOTES]
+    text = session_share_text(quotes)
+    return {
+        "count": len(quotes),
+        "text": text,
+        "whatsapp_url": f"https://wa.me/?text={quote(text)}" if text else "",
+    }
+
+
+def remember_approved_quote(candidate: dict) -> None:
+    ref = str(candidate.get("ref") or "").strip()
+    if not ref:
+        return
+    with STATE_LOCK:
+        SESSION_QUOTES.append(
+            {
+                "ref": ref,
+                "source": str(candidate.get("source") or "").strip(),
+                "asr": str(candidate.get("asr") or "").strip(),
+                "detected_text": str(candidate.get("detected_text") or "").strip(),
+            }
+        )
 
 
 def update_processing_status(
@@ -223,6 +265,9 @@ def decide_candidate(action: str) -> tuple[bool, str, dict]:
     if not ok:
         return False, reason, candidate
 
+    if action == "approve":
+        remember_approved_quote(candidate)
+
     with STATE_LOCK:
         PENDING_CANDIDATE.clear()
         PROCESSING_STATE.update(
@@ -333,6 +378,11 @@ class SlideHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/bible-structure":
             self.send_json({"books": bible_book_names(), "structure": bible_structure()})
+            return
+        if self.path == "/api/session-quotes":
+            with STATE_LOCK:
+                quotes = [dict(item) for item in SESSION_QUOTES]
+            self.send_json({"quotes": quotes, "share": session_share_payload(quotes)})
             return
         if self.path == "/operator-qr.svg":
             self.send_qr()

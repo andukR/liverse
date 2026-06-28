@@ -28,6 +28,22 @@ button:disabled { opacity: .5; }
 .manual input { width: 100%; min-height: 58px; border: 1px solid #4a5c6e; border-radius: 12px; padding: 0 15px; background: #0e151d; color: white; font-size: 20px; }
 .suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
 .book-suggestion { min-height: 42px; padding: 8px 12px; background: #283849; font-size: 16px; font-weight: 600; }
+.session-share { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; margin-top: 10px; }
+.session-quote-count { color: #c8d2dc; font-size: 16px; font-weight: 700; }
+.share-button {
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: #203040;
+  color: white;
+  font-size: 15px;
+  font-weight: 750;
+  text-decoration: none;
+}
+.share-button[href]:not(.disabled) { background: #148447; }
+.share-button.disabled { opacity: .45; pointer-events: none; }
 .range-picker { margin-top: 14px; padding-top: 14px; border-top: 1px solid #2b3847; }
 .picker-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
 .picker-tabs button { min-height: 34px; display: grid; place-items: center; border-radius: 8px; background: #263443; color: #aebdcc; font-size: 14px; font-weight: 750; user-select: none; }
@@ -112,6 +128,9 @@ button:disabled { opacity: .5; }
   .manual input { min-height: 38px; padding: 0 10px; border-radius: 9px; font-size: 16px; }
   .suggestions { gap: 5px; margin-top: 5px; }
   .book-suggestion { min-height: 30px; padding: 5px 8px; font-size: 13px; }
+  .session-share { gap: 5px; margin-top: 5px; }
+  .session-quote-count { font-size: 12px; }
+  .share-button { min-height: 30px; padding: 0 8px; border-radius: 6px; font-size: 12px; }
   .range-picker {
     flex: 1 1 auto;
     min-height: 0;
@@ -205,6 +224,9 @@ button:disabled { opacity: .5; }
   .manual input { min-height: 44px; font-size: 18px; }
   .suggestions { margin-top: 6px; }
   .book-suggestion { min-height: 34px; padding: 6px 10px; font-size: 14px; }
+  .session-share { margin-top: 8px; }
+  .session-quote-count { font-size: 14px; }
+  .share-button { min-height: 34px; font-size: 14px; }
   .range-picker {
     min-height: 0;
     flex: 1;
